@@ -1,0 +1,118 @@
+* Arch Linux Installation
+This document outlines the steps to install Arch Linux with specific configurations.
+
+** Pre-requisites
+   Ensure the script is run as root.
+
+#+BEGIN_SRC bash
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This script must be run as root"
+    exit 1
+fi
+#+END_SRC
+
+** Disk Configuration
+   Partition and format the disk.
+
+*** Disk Variables
+    Specify the disk to be partitioned and Btrfs mount options.
+
+#+BEGIN_SRC bash
+DISK="/dev/sda"
+BTRFS_OPTS="noatime,compress=zstd,space_cache,ssd"
+#+END_SRC
+
+*** Partitioning and Formatting
+    Create the necessary partitions and format them.
+
+#+BEGIN_SRC bash
+parted "$DISK" mklabel gpt
+parted "$DISK" mkpart ESP fat32 1MiB 513MiB
+parted "$DISK" set 1 boot on
+parted "$DISK" mkpart primary linux-swap 513MiB 2.5GiB
+parted "$DISK" mkpart primary btrfs 2.5GiB 100%
+
+mkfs.fat -F32 "${DISK}1"
+mkswap "${DISK}2"
+swapon "${DISK}2"
+mkfs.btrfs "${DISK}3"
+#+END_SRC
+
+*** Subvolumes and Mounting
+    Create Btrfs subvolumes and mount them.
+
+#+BEGIN_SRC bash
+mount "${DISK}3" /mnt
+btrfs subvolume create /mnt/@root
+btrfs subvolume create /mnt/@home
+btrfs subvolume create /mnt/@snapshots
+umount /mnt
+
+mount -o $BTRFS_OPTS,subvol=@root "${DISK}3" /mnt
+mkdir -p /mnt/{home,boot,.snapshots}
+mount -o $BTRFS_OPTS,subvol=@home "${DISK}3" /mnt/home
+mount -o $BTRFS_OPTS,subvol=@snapshots "${DISK}3" /mnt/.snapshots
+mount "${DISK}1" /mnt/boot
+#+END_SRC
+
+** Arch Linux Bootstrap
+   Install the base system.
+
+#+BEGIN_SRC bash
+pacstrap /mnt base linux linux-headers base-devel linux-firmware vim nano snapper
+genfstab -U /mnt >> /mnt/etc/fstab
+#+END_SRC
+
+** System Configuration
+   Chroot into the system and set it up.
+
+*** Timezone, Locale, and Hostname
+    Set the timezone to Phoenix, Arizona, configure the locale, and set the hostname.
+
+#+BEGIN_SRC bash
+arch-chroot /mnt <<EOF
+ln -sf /usr/share/zoneinfo/America/Phoenix /etc/localtime
+hwclock --systohc
+echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+locale-gen
+echo "LANG=en_US.UTF-8" > /etc/locale.conf
+echo "archlinux" > /etc/hostname
+EOF
+#+END_SRC
+
+*** Additional Software
+    Install the additional software packages.
+
+#+BEGIN_SRC bash
+arch-chroot /mnt <<EOF
+pacman -S --noconfirm grub efibootmgr dosfstools os-prober mtools sddm xfce4 xmonad xmobar dmenu emacs pulseaudio bluez bluez-utils cups networkmanager network-manager-applet wpa_supplicant neofetch
+EOF
+#+END_SRC
+
+*** Services and Bootloader
+    Enable necessary services and set up the bootloader.
+
+#+BEGIN_SRC bash
+arch-chroot /mnt <<EOF
+systemctl enable sddm NetworkManager bluetooth cups
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+grub-mkconfig -o /boot/grub/grub.cfg
+EOF
+#+END_SRC
+
+*** Snapper Configuration
+    Set up snapper for Btrfs snapshots.
+
+#+BEGIN_SRC bash
+arch-chroot /mnt <<EOF
+snapper --no-dbus -c root create-config /
+snapper --no-dbus -c home create-config /home
+EOF
+#+END_SRC
+
+** Completion
+   Notify the user of completion.
+
+#+BEGIN_SRC bash
+echo "Installation completed! You can now reboot into your new Arch Linux system."
+#+END_SRC
