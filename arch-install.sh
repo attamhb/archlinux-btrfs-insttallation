@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 # Specify the disk to be partitioned
 DISK="/dev/sda"
 
@@ -23,15 +22,17 @@ mkfs.btrfs "${DISK}3"
 mount "${DISK}3" /mnt
 btrfs subvolume create /mnt/@root
 btrfs subvolume create /mnt/@home
+btrfs subvolume create /mnt/@snapshots
 umount /mnt
 
 mount -o $BTRFS_OPTS,subvol=@root "${DISK}3" /mnt
-mkdir -p /mnt/{home,boot}
+mkdir -p /mnt/{home,boot,.snapshots}
 mount -o $BTRFS_OPTS,subvol=@home "${DISK}3" /mnt/home
+mount -o $BTRFS_OPTS,subvol=@snapshots "${DISK}3" /mnt/.snapshots
 mount "${DISK}1" /mnt/boot
 
 # Bootstrap Arch Linux
-pacstrap /mnt base linux linux-headers base-devel linux-firmware vim nano
+pacstrap /mnt base linux linux-headers base-devel linux-firmware vim nano snapper
 
 # Generate fstab
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -40,7 +41,7 @@ genfstab -U /mnt >> /mnt/etc/fstab
 arch-chroot /mnt <<EOF
 
 # Timezone and locale
-ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
+ln -sf /usr/share/zoneinfo/America/Phoenix /etc/localtime
 hwclock --systohc
 echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
 locale-gen
@@ -58,6 +59,10 @@ systemctl enable sddm NetworkManager bluetooth cups
 # Set up GRUB
 grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
 grub-mkconfig -o /boot/grub/grub.cfg
+
+# Setup snapper
+snapper --no-dbus -c root create-config /
+snapper --no-dbus -c home create-config /home
 
 EOF
 
